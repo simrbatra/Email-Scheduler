@@ -1,0 +1,37 @@
+
+import { Worker } from "bullmq";
+import nodemailer from "nodemailer";
+import dotenv from "dotenv";
+import { redis } from "./queue/emailQueue";
+import { db } from "./db";
+
+dotenv.config();
+
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT),
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  }
+});
+
+new Worker(
+  "emails",
+  async job => {
+    const { emailId } = job.data;
+    const { rows } = await db.query("SELECT * FROM emails WHERE id=$1", [emailId]);
+
+    const email = rows[0];
+
+    await transporter.sendMail({
+      to: email.recipient,
+      subject: email.subject,
+      html: email.body
+    });
+
+    await db.query("UPDATE emails SET status='sent', sent_at=NOW() WHERE id=$1", [emailId]);
+  }
+);
+
+console.log("Worker started");

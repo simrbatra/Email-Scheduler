@@ -1,0 +1,31 @@
+
+import express from "express";
+import dotenv from "dotenv";
+import { emailQueue } from "./queue/emailQueue";
+import { db } from "./db";
+
+dotenv.config();
+
+const app = express();
+app.use(express.json());
+
+app.post("/schedule", async (req, res) => {
+  const { to, subject, body, sendAt } = req.body;
+
+  const result = await db.query(
+    "INSERT INTO emails (recipient, subject, body, send_at, status) VALUES ($1,$2,$3,$4,'scheduled') RETURNING id",
+    [to, subject, body, sendAt]
+  );
+
+  const jobId = result.rows[0].id;
+
+  await emailQueue.add(
+    "send-email",
+    { emailId: jobId },
+    { delay: new Date(sendAt).getTime() - Date.now() }
+  );
+
+  res.json({ success: true, jobId });
+});
+
+app.listen(4000, () => console.log("Server running"));
